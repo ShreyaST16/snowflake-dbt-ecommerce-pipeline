@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: novamart
+    database: NOVAMART_DB
+    schema: RAW
+
+    tables:
+      - name: customers
+      - name: products
+      - name: orders
+      - name: order_items
+      - name: payments

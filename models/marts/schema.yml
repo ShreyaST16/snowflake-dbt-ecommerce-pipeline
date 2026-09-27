@@ -1,0 +1,47 @@
+version: 2
+
+models:
+
+  - name: fct_orders
+    description: One row per order with order and payment metrics.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+
+      - name: order_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['COMPLETED', 'CANCELLED']
+
+      - name: order_amount
+        data_tests:
+          - not_null
+
+
+  - name: dim_customers
+    description: Customer dimension enriched with order history metrics.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+
+
+  - name: dim_products
+    description: Product dimension with standardized product attributes.
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique

@@ -1,0 +1,94 @@
+version: 2
+
+models:
+
+  - name: stg_customers
+    description: Cleaned and standardized customer data from the raw customers source.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+
+      - name: email
+        description: Customer email address standardized to lowercase.
+
+      - name: state
+        description: Two-letter standardized state code where known.
+
+
+  - name: stg_products
+    description: Cleaned product master data.
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+
+      - name: unit_price
+        tests:
+          - not_null
+
+
+  - name: stg_orders
+    description: Cleaned order-level data.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+
+      - name: order_status
+        tests:
+          - accepted_values:
+              values: ['COMPLETED', 'CANCELLED']
+
+
+  - name: stg_order_items
+    description: Cleaned order line-item data.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_orders')
+              field: order_id
+
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
+
+      - name: quantity
+        tests:
+          - not_null
+
+
+  - name: stg_payments
+    description: Cleaned payment transaction data.
+    columns:
+      - name: payment_id
+        tests:
+          - not_null
+          - unique
+
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_orders')
+              field: order_id
+
+      - name: payment_status
+        tests:
+          - accepted_values:
+              values: ['PAID', 'REFUNDED']

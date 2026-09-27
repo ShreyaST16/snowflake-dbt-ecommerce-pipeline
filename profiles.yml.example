@@ -1,0 +1,19 @@
+novamart:
+  target: dev
+
+  outputs:
+    dev:
+      type: snowflake
+      account: YOUR_ORG-YOUR_ACCOUNT
+      user: YOUR_SNOWFLAKE_USER
+
+      # Keep the real token outside Git.
+      # Example on Windows CMD:
+      # set SNOWFLAKE_PAT=your_token_here
+      password: "{{ env_var('SNOWFLAKE_PAT') }}"
+
+      role: ACCOUNTADMIN
+      warehouse: COMPUTE_WH
+      database: NOVAMART_DB
+      schema: STAGING
+      threads: 4
