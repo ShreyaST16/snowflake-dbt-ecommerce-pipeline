@@ -197,6 +197,38 @@ The project uses an order-level unique key and an incremental filter so the enti
 
 For this demo, the incremental filter is based on `order_date`.
 
+## Project Screenshots
+
+### dbt Lineage
+
+The dbt DAG shows the dependency flow from Snowflake source tables through staging and intermediate models into analytics-ready marts.
+
+![dbt lineage](docs/DBT_Data_Lineage_Graph.png)
+
+### Fact Table Structure
+
+`FCT_ORDERS` is materialized in Snowflake with one row per order.
+
+![fct_orders structure](docs/fct_orders_structure.png)
+
+### Fact Table Sample Data
+
+Sample rows from the final fact table.
+
+![fct_orders sample data](docs/fct_orders_sample_data.png)
+
+### Customer Dimension
+
+![dim_customers structure](docs/dim_customers_structure.png)
+
+![dim_customers sample data](docs/dim_customers_data.png)
+
+### Product Dimension
+
+![dim_products structure](docs/dim_products_structure.png)
+
+![dim_products sample data](docs/dim_products_data.png)
+
 ### Production consideration
 
 A production pipeline would usually use a more robust change-detection strategy such as:
@@ -258,6 +290,14 @@ novamart/
 │
 ├── macros/
 │   └── generate_schema_name.sql
+├── docs/
+│   ├──  DBT_Data_Lineage_Graph.png
+│   ├── fct_orders_structure.png
+│   ├── fct_orders_sample_data.png
+│   ├── dim_customers_structure.png
+│   ├── dim_customers_data.png
+│   ├──  dim_products_structure.png
+│   ├── dim_products_data.png
 │
 ├── profiles.yml.example
 ├── requirements.txt
