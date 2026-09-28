@@ -12,7 +12,7 @@ novamart:
       # set SNOWFLAKE_PAT=your_token_here
       password: "{{ env_var('SNOWFLAKE_PAT') }}"
 
-      role: ACCOUNTADMIN
+      role: TRANSFORMER
       warehouse: COMPUTE_WH
       database: NOVAMART_DB
       schema: STAGING

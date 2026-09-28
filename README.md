@@ -48,9 +48,11 @@ flowchart TD
     C2 --> D1[INT_ORDER_ITEMS_ENRICHED]
     C3 --> D1
     C4 --> D1
+    C5 --> D2[INT_PAYMENTS_BY_ORDER]
 
-    D1 --> E1[FCT_ORDERS]
-    C5 --> E1
+    C3 --> E1[FCT_ORDERS]
+    D1 --> E1
+    D2 --> E1
     C1 --> E2[DIM_CUSTOMERS]
     E1 --> E2
     C2 --> E3[DIM_PRODUCTS]
@@ -88,9 +90,9 @@ Contains:
 - order date and status
 - total item count
 - order amount
-- payment method and status
-- payment amount
-- payment timestamp
+- net payment amount
+- last payment timestamp
+- payment transaction count
 
 ### Dimensions
 
@@ -116,34 +118,28 @@ Contains standardized product attributes such as category and unit price.
 ```text
 RAW.CUSTOMERS
     ↓
-STG_CUSTOMERS
-    ↓
-DIM_CUSTOMERS
-        ↑
-        │
-FCT_ORDERS
-
-RAW.PRODUCTS
-    ↓
-STG_PRODUCTS ───────────────→ DIM_PRODUCTS
-    ↓
-INT_ORDER_ITEMS_ENRICHED
-        ↑
-STG_ORDERS
-        ↑
-RAW.ORDERS
-
-STG_ORDER_ITEMS
-        ↑
-RAW.ORDER_ITEMS
-
-INT_ORDER_ITEMS_ENRICHED
-        ↓
-FCT_ORDERS
-        ↑
-STG_PAYMENTS
-        ↑
-RAW.PAYMENTS
+STG_CUSTOMERS ───────────────────────────────→ DIM_CUSTOMERS
+                                                   ↑
+                                                   │
+RAW.ORDERS                                         │
+    ↓                                              │
+STG_ORDERS ───────────────────────────────────→ FCT_ORDERS
+                                                   ↑
+RAW.ORDER_ITEMS                                    │
+    ↓                                              │
+STG_ORDER_ITEMS ──┐                                │
+                  ├──→ INT_ORDER_ITEMS_ENRICHED ───┤
+RAW.PRODUCTS      │                                │
+    ↓             │                                │
+STG_PRODUCTS ─────┘                                │
+    │                                              │
+    └──────────────────────────────────────────→ DIM_PRODUCTS
+                                                  │
+RAW.PAYMENTS                                      │
+    ↓                                             │
+STG_PAYMENTS                                      │
+    ↓                                             │
+INT_PAYMENTS_BY_ORDER ────────────────────────────┘
 ```
 
 ## Data quality
@@ -158,6 +154,8 @@ The project uses dbt data tests to validate assumptions such as:
 - payment order IDs exist in the order model
 - order status values are restricted to expected values
 - payment status values are restricted to expected values
+- every staged order must exist in `FCT_ORDERS`
+- completed order amounts must reconcile to net payment amounts
 
 Examples include:
 
@@ -177,6 +175,13 @@ data_tests:
         field: customer_id
 ```
 
+The project also includes singular reconciliation tests:
+
+- `assert_all_orders_in_fact.sql` verifies that no staged orders disappear from the fact table
+- `assert_paid_orders_reconcile.sql` verifies that completed order amounts reconcile to net payment amounts
+
+A singular dbt test passes when its query returns zero rows.
+
 ## Incremental processing
 
 `FCT_ORDERS` is implemented as an incremental dbt model.
@@ -193,9 +198,9 @@ incremental dbt run
 updated FCT_ORDERS
 ```
 
-The project uses an order-level unique key and an incremental filter so the entire fact table does not need to be rebuilt on every run.
+The project uses `order_id` as the unique key with Snowflake `MERGE` behavior so qualifying rows can be inserted or updated without rebuilding the entire fact table.
 
-For this demo, the incremental filter is based on `order_date`.
+For this demo, incremental runs reprocess a 3-day `order_date` lookback window. This helps catch some late-arriving changes while keeping the example simple and efficient.
 
 ## Project Screenshots
 
@@ -233,13 +238,13 @@ Sample rows from the final fact table.
 
 A production pipeline would usually use a more robust change-detection strategy such as:
 
-- `updated_at`
-- CDC
+- source `updated_at` timestamps
+- change data capture (CDC)
 - watermarks
-- lookback windows
+- configurable lookback windows
 - merge/upsert logic
 
-This would help capture late-arriving records and updates to historical orders.
+These patterns improve detection of late-arriving records and updates to historical orders.
 
 ## dbt concepts demonstrated
 
@@ -261,6 +266,7 @@ This project demonstrates:
 - dimensional modeling
 - referential integrity
 - ELT architecture
+- role-based access control (RBAC)
 
 ## Repository structure
 
@@ -280,7 +286,8 @@ novamart/
 │   │   └── stg_payments.sql
 │   │
 │   ├── intermediate/
-│   │   └── int_order_items_enriched.sql
+│   │   ├── int_order_items_enriched.sql
+│   │   └── int_payments_by_order.sql
 │   │
 │   └── marts/
 │       ├── schema.yml
@@ -290,14 +297,31 @@ novamart/
 │
 ├── macros/
 │   └── generate_schema_name.sql
+│
+├── tests/
+│   ├── assert_all_orders_in_fact.sql
+│   └── assert_paid_orders_reconcile.sql
+│
+├── data/
+│   ├── customers.csv
+│   ├── products.csv
+│   ├── orders.csv
+│   ├── order_items.csv
+│   └── payments.csv
+│
+├── setup/
+│   ├── create_raw_objects.sql
+│   ├── create_transformer_role.sql
+│   └── load_raw.sql
+│
 ├── docs/
-│   ├──  DBT_Data_Lineage_Graph.png
+│   ├── DBT_Data_Lineage_Graph.png
 │   ├── fct_orders_structure.png
 │   ├── fct_orders_sample_data.png
 │   ├── dim_customers_structure.png
 │   ├── dim_customers_data.png
-│   ├──  dim_products_structure.png
-│   ├── dim_products_data.png
+│   ├── dim_products_structure.png
+│   └── dim_products_data.png
 │
 ├── profiles.yml.example
 ├── requirements.txt
@@ -322,9 +346,71 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 3. Configure the dbt profile
+### 3. Create the Snowflake raw layer
 
-Copy the example profile:
+Run:
+
+```text
+setup/create_raw_objects.sql
+```
+
+This creates the required schemas, CSV file format, internal Snowflake stage, and raw source tables.
+
+### 4. Create the dbt transformer role
+
+Run:
+
+```text
+setup/create_transformer_role.sql
+```
+
+This creates a dedicated `TRANSFORMER` role with the permissions needed to:
+
+- use the project warehouse
+- read from `RAW`
+- create tables and views in `STAGING`, `INTERMEDIATE`, and `MARTS`
+
+Grant the role to the Snowflake user that will run dbt.
+
+The ownership-transfer statements used while migrating an existing environment are intentionally not included in the setup script. In a clean setup, dbt-created objects are owned by the role that creates them.
+
+### 5. Upload the synthetic source files
+
+Upload the files from:
+
+```text
+data/
+```
+
+to:
+
+```text
+@NOVAMART_DB.RAW.NOVAMART_STAGE
+```
+
+using Snowsight, SnowSQL, or Snowflake CLI.
+
+Files included:
+
+- `customers.csv`
+- `products.csv`
+- `orders.csv`
+- `order_items.csv`
+- `payments.csv`
+
+### 6. Load the raw tables
+
+After the files are staged, run:
+
+```text
+setup/load_raw.sql
+```
+
+This uses Snowflake `COPY INTO` commands to populate the raw source tables.
+
+### 7. Configure the dbt profile
+
+Copy:
 
 ```text
 profiles.yml.example
@@ -336,27 +422,35 @@ to your local dbt profiles directory:
 C:\Users\<your-user>\.dbt\profiles.yml
 ```
 
-Do not commit secrets to GitHub.
+The example profile uses:
 
-The example profile expects a Snowflake token through an environment variable:
+```text
+role: TRANSFORMER
+```
+
+and expects the Snowflake programmatic access token through the environment variable:
 
 ```text
 SNOWFLAKE_PAT
 ```
 
-### 4. Validate the connection
+Do not commit credentials, tokens, or your real `profiles.yml` to GitHub.
+
+### 8. Validate the connection
 
 ```bash
 dbt debug
 ```
 
-### 5. Build the project
+### 9. Build and test the project
 
 ```bash
 dbt build
 ```
 
-### 6. Run only the marts
+This builds the models in dependency order and runs the configured data tests.
+
+### 10. Run only the marts
 
 ```bash
 dbt build --select path:models/marts
@@ -406,7 +500,10 @@ It keeps reusable joins and transformation logic out of final marts and prevents
 It gives analytics consumers a clear business-oriented model with explicitly defined grain.
 
 **Why incremental processing?**  
-It avoids rebuilding the entire fact table when only a small amount of new data arrives.
+It avoids rebuilding the entire fact table when only a small amount of new or recently changed data arrives. The model uses a 3-day lookback window and `order_id` as the merge key.
+
+**Why a dedicated `TRANSFORMER` role?**  
+dbt runs with a project-specific role instead of `ACCOUNTADMIN`, limiting access to only the warehouse, raw source reads, and object creation needed for this pipeline.
 
 ## What I learned
 
@@ -429,12 +526,11 @@ Possible extensions:
 - add CI with GitHub Actions
 - add source freshness checks
 - add audit columns such as `loaded_at`
-- use `updated_at` for production-style incremental logic
+- replace the demo `order_date` lookback with source `updated_at` or CDC for production-grade change detection
 - add snapshots for slowly changing dimensions
 - add a BI dashboard
 - add orchestration with Airflow
 - add ingestion using Fivetran or Airbyte
-- introduce role-based access control instead of using an administrative role
 
 ---
 
