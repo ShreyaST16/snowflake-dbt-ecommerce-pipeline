@@ -33,7 +33,7 @@ models:
     description: Customer dimension enriched with order history metrics.
     columns:
       - name: customer_id
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -42,6 +42,6 @@ models:
     description: Product dimension with standardized product attributes.
     columns:
       - name: product_id
-        tests:
+        data_tests:
           - not_null
           - unique
